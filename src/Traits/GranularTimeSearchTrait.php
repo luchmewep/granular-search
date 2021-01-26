@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Traits;
+namespace Luchmewep\GranularSearch\Traits;
 
 use Illuminate\Support\Carbon;
 
