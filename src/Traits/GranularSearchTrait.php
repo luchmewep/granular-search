@@ -41,7 +41,11 @@ trait GranularSearchTrait
         $table_keys = Schema::getColumnListing($table_name);
 
         // Step 4: Get intersection between Table Column Names and Request Keys.
-        $common_keys = array_intersect($request_keys, $table_keys);
+        $common_keys = array_values(array_intersect($request_keys, $table_keys));
+
+        // Step 4.1: Get intersection between Like Keys and Table Keys
+        $table_like_intersect_keys = array_values(array_intersect($table_keys, $like_keys));
+        $table_like_diff_keys = array_values(array_diff($table_keys, $like_keys, $excluded_keys));
 
         /**
          * * By default, $common_keys will use '=' instead of LIKE when filtering.
@@ -52,38 +56,93 @@ trait GranularSearchTrait
         // Step 5.1: $like_keys might contain keys that are not inside the $common_keys so remove those keys.
         // Step 5.2: $common_keys should also remove the keys that are already in the $like_keys.
         // Step 5.3: $like_keys can then proceed on filtering the $model using LIKE instead of '='.
-        if (!is_null($like_keys)) {
+
+        if (is_null($like_keys) === FALSE) {
             $like_keys = array_intersect($like_keys, $common_keys);
             $common_keys = array_values(array_diff($common_keys, $like_keys));
 
-            foreach ($like_keys as $col) {
-                if ($request->filled($col)) {
-                    if (is_array($data[$col])) {
-                        $model = $model->where(function ($query) use ($data, $col) {
-                            foreach ($data[$col] as $d) {
+            if($request->has('q') && $request->filled('q')){
+                $q = $request->q;
+                foreach ($table_like_intersect_keys as $col) {
+                    if(is_array($q)){
+                        $model = $model->orWhere(function ($query) use ($q, $col) {
+                            foreach ($q as $d) {
                                 $query->orWhere($col, 'LIKE', '%' . $d . '%');
-                            };
-                            return $query;
+                            }
                         });
-                    } else {
-                        $model = $model->where($col, 'LIKE', '%' . $data[$col] . '%');
+                    }else{
+                        $model = $model->orWhere($col, 'LIKE', '%' . $q . '%');
+                    }
+                }
+            }
+            else {
+                foreach ($like_keys as $col) {
+                    if ($request->filled($col)) {
+                        if (is_array($data[$col])) {
+                            $model = $model->where(function ($query) use ($data, $col) {
+                                foreach ($data[$col] as $d) {
+                                    $query->orWhere($col, 'LIKE', '%' . $d . '%');
+                                }
+                            });
+                        } else {
+                            $model = $model->where($col, 'LIKE', '%' . $data[$col] . '%');
+                        }
                     }
                 }
             }
         }
 
         // Step 6: $common_keys can then proceed to filtering the $model using '='.
-        foreach ($common_keys as $col) {
-            if ($request->filled($col)) {
-                if (is_array($data[$col])) {
-                    $model = $model->whereIn($col, $data[$col]);
-                } else {
-                    $model = $model->where($col, $data[$col]);
+        if($request->has('q') && $request->filled('q')){
+            $q = $request->q;
+            foreach ($table_like_diff_keys as $col) {
+                if(is_array($q)){
+                    $model = $model->orWhereIn($col, $q);
+                }else{
+                    $model = $model->orWhere($col, $q);
                 }
             }
         }
 
-        // Step 7: return the $model
+        else{
+            foreach ($common_keys as $col) {
+                if ($request->filled($col)) {
+                    if (is_array($data[$col])) {
+                        $model = $model->whereIn($col, $data[$col]);
+                    } else {
+                        $model = $model->where($col, $data[$col]);
+                    }
+                }
+            }
+        }
+
+        // Step 7: (NEW) orderBy
+        if($request->has('sortBy') && $request->filled('sortBy')){
+            $asc = $request->sortBy;
+            if(is_array($asc)){
+                foreach ($asc as $a) {
+                    if(Schema::hasColumn($table_name, $a)){
+                        $model = $model->orderBy($a);
+                    }
+                }
+            }else if(Schema::hasColumn($table_name, $asc)) {
+                $model = $model->orderBy($asc);
+            }
+        }
+        else if($request->has('sortByDesc') && $request->filled('sortByDesc')){
+            $desc = $request->sortByDesc;
+            if(is_array($desc)){
+                foreach ($desc as $d) {
+                    if(Schema::hasColumn($table_name, $d)){
+                        $model = $model->orderBy($d, 'desc');
+                    }
+                }
+            }else if(Schema::hasColumn($table_name, $desc)) {
+                $model = $model->orderBy($desc, 'desc');
+            }
+        }
+
+        // Step 8: return the $model
         return $model;
     }
 }
