@@ -20,10 +20,10 @@ use Illuminate\Support\Facades\DB;
  *
  * * Expected $request params and use:
  * * 'date' - Search all rows within a specific date.
- * * 'date_from' & 'date_to' - Seach all rows between two dates.
- * * 'datetime_from' & 'datetime_to' - Seach all rows between two datetimes.
+ * * 'date_from' & 'date_to' - Search all rows between two dates.
+ * * 'datetime_from' & 'datetime_to' - Search all rows between two datetimes.
  *
- * @author James Carlo S. Luchavez (james.luchavez@fourello.com)
+ * @author James Carlo S. Luchavez (carlo.luchavez@fourello.com)
  */
 trait GranularGroupByTimeTrait
 {
@@ -31,7 +31,7 @@ trait GranularGroupByTimeTrait
     {
         $value = 1;
         if ($request->has('value')) {
-            $value = intval($request->value);
+            $value = (int) $request->value;
         }
 
         $groupByTimeString = $this->getGroupByTime($time_type, $value, $time_column);

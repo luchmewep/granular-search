@@ -2,7 +2,6 @@
 
 namespace Luchmewep\GranularSearch\Traits;
 
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -25,7 +24,7 @@ use Illuminate\Support\Facades\Schema;
  * * $excluded_keys - String array (optional). If you want specific table columns to be unsearchable, you may specify here.
  * * $like_keys - String array (optional). If you want to filter with LIKE instead of '=' to specific table columns, specify it here.
  *
- * @author James Carlo S. Luchavez (james.luchavez@fourello.com)
+ * @author James Carlo S. Luchavez (carlo.luchavez@fourello.com)
  */
 trait GranularSearchTrait
 {
@@ -57,64 +56,66 @@ trait GranularSearchTrait
         // Step 5.2: $common_keys should also remove the keys that are already in the $like_keys.
         // Step 5.3: $like_keys can then proceed on filtering the $model using LIKE instead of '='.
 
-        if (is_null($like_keys) === FALSE) {
-            $like_keys = array_intersect($like_keys, $common_keys);
-            $common_keys = array_values(array_diff($common_keys, $like_keys));
+        $model = $model->where(function ($query) use ($request, $data, $like_keys, $common_keys, $table_like_intersect_keys, $table_like_diff_keys) {
+            if (is_null($like_keys) === FALSE) {
+                $like_keys = array_intersect($like_keys, $common_keys);
+                $common_keys = array_values(array_diff($common_keys, $like_keys));
 
-            if($request->has('q') && $request->filled('q')){
-                $q = $request->q;
-                foreach ($table_like_intersect_keys as $col) {
-                    if(is_array($q)){
-                        $model = $model->orWhere(function ($query) use ($q, $col) {
-                            foreach ($q as $d) {
-                                $query->orWhere($col, 'LIKE', '%' . $d . '%');
-                            }
-                        });
-                    }else{
-                        $model = $model->orWhere($col, 'LIKE', '%' . $q . '%');
-                    }
-                }
-            }
-            else {
-                foreach ($like_keys as $col) {
-                    if ($request->filled($col)) {
-                        if (is_array($data[$col])) {
-                            $model = $model->where(function ($query) use ($data, $col) {
-                                foreach ($data[$col] as $d) {
-                                    $query->orWhere($col, 'LIKE', '%' . $d . '%');
+                if($request->has('q') && $request->filled('q')){
+                    $search = $request->q;
+                    foreach ($table_like_intersect_keys as $col) {
+                        if(is_array($search)){
+                            $query = $query->orWhere(function ($q) use ($search, $col) {
+                                foreach ($search as $s) {
+                                    $q->orWhere($col, 'LIKE', '%' . $s . '%');
                                 }
                             });
-                        } else {
-                            $model = $model->where($col, 'LIKE', '%' . $data[$col] . '%');
+                        }else{
+                            $query = $query->orWhere($col, 'LIKE', '%' . $search . '%');
+                        }
+                    }
+                }
+                else {
+                    foreach ($like_keys as $col) {
+                        if ($request->filled($col)) {
+                            if (is_array($data[$col])) {
+                                $query = $query->where(function ($q) use ($data, $col) {
+                                    foreach ($data[$col] as $d) {
+                                        $q->orWhere($col, 'LIKE', '%' . $d . '%');
+                                    }
+                                });
+                            } else {
+                                $query = $query->where($col, 'LIKE', '%' . $data[$col] . '%');
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Step 6: $common_keys can then proceed to filtering the $model using '='.
-        if($request->has('q') && $request->filled('q')){
-            $q = $request->q;
-            foreach ($table_like_diff_keys as $col) {
-                if(is_array($q)){
-                    $model = $model->orWhereIn($col, $q);
-                }else{
-                    $model = $model->orWhere($col, $q);
-                }
-            }
-        }
-
-        else{
-            foreach ($common_keys as $col) {
-                if ($request->filled($col)) {
-                    if (is_array($data[$col])) {
-                        $model = $model->whereIn($col, $data[$col]);
-                    } else {
-                        $model = $model->where($col, $data[$col]);
+            // Step 6: $common_keys can then proceed to filtering the $query using '='.
+            if($request->has('q') && $request->filled('q')){
+                $search = $request->q;
+                foreach ($table_like_diff_keys as $col) {
+                    if(is_array($search)){
+                        $query = $query->orWhereIn($col, $search);
+                    }else{
+                        $query = $query->orWhere($col, $search);
                     }
                 }
             }
-        }
+
+            else{
+                foreach ($common_keys as $col) {
+                    if ($request->filled($col)) {
+                        if (is_array($data[$col])) {
+                            $query = $query->whereIn($col, $data[$col]);
+                        } else {
+                            $query = $query->where($col, $data[$col]);
+                        }
+                    }
+                }
+            }
+        });
 
         // Step 7: (NEW) orderBy
         if($request->has('sortBy') && $request->filled('sortBy')){

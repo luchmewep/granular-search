@@ -19,10 +19,10 @@ use Illuminate\Support\Carbon;
  *
  * * Expected $request params and use:
  * * 'date' - Search all rows within a specific date.
- * * 'date_from' & 'date_to' - Seach all rows between two dates.
- * * 'datetime_from' & 'datetime_to' - Seach all rows between two datetimes.
+ * * 'date_from' & 'date_to' - Search all rows between two dates.
+ * * 'datetime_from' & 'datetime_to' - Search all rows between two date times.
  *
- * @author James Carlo S. Luchavez (james.luchavez@fourello.com)
+ * @author James Carlo S. Luchavez (carlo.luchavez@fourello.com)
  */
 trait GranularTimeSearchTrait
 {

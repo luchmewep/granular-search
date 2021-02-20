@@ -2,8 +2,6 @@
 
 namespace Luchmewep\GranularSearch\Traits;
 
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -21,21 +19,25 @@ use Illuminate\Support\Facades\Schema;
  *
  * * Expected $request params and use:
  * * 'date' - Search all rows within a specific date.
- * * 'date_from' & 'date_to' - Seach all rows between two dates.
- * * 'datetime_from' & 'datetime_to' - Seach all rows between two datetimes.
+ * * 'date_from' & 'date_to' - Search all rows between two dates.
+ * * 'datetime_from' & 'datetime_to' - Search all rows between two date times.
  *
- * @author James Carlo S. Luchavez (james.luchavez@fourello.com)
+ * @author James Carlo S. Luchavez (carlo.luchavez@fourello.com)
  */
 trait GranularGroupByTrait
 {
     public function getGranularGroupBy($model, string $group_by, string $table_name, ?array $excluded_keys = null, ?string $addAggregateSelect = null)
     {
         $table_keys = Schema::getColumnListing($table_name);
-        if (!is_null($excluded_keys)) $table_keys = $table_keys->except($excluded_keys);
+        if (!is_null($excluded_keys)) {
+            $table_keys = $table_keys->except($excluded_keys);
+        }
 
-        if (in_array($group_by, $table_keys)) {
+        if (in_array($group_by, $table_keys, true)) {
             $model = $model->selectRaw("{$group_by}, COUNT(*) as count")->groupByRaw($group_by);
-            if (!is_null($addAggregateSelect)) $model = $model->selectRaw($addAggregateSelect);
+            if (!is_null($addAggregateSelect)) {
+                $model = $model->selectRaw($addAggregateSelect);
+            }
         }
 
         return $model;
