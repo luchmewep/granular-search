@@ -2,6 +2,7 @@
 
 namespace Luchmewep\GranularSearch;
 
+use Illuminate\Support\Arr;
 use Illuminate\Support\ServiceProvider;
 
 class GranularSearchServiceProvider extends ServiceProvider
@@ -22,6 +23,13 @@ class GranularSearchServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->bootForConsole();
         }
+
+        Arr::macro('isFilled', function ($array, string $key){
+            foreach ($array as $k => $value){
+                return $k === $key && is_null($value) === FALSE;
+            }
+            return false;
+        });
     }
 
     /**
