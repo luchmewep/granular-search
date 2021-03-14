@@ -3,16 +3,24 @@
 
 namespace Luchmewep\GranularSearch\Traits;
 
-use BadMethodCallException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionException;
 use RuntimeException;
+
+/**
+ * Trait GranularSearchableTrait
+ * @package Luchmewep\GranularSearch\Traits
+ *
+ * @method Builder ofRelation(string $relation_name, ?string $prepend_key = '', ?bool $is_recursive = FALSE)
+ * @method Builder ofRelations(?array $relations = [], ?array $excluded_relations =  [], ?bool $is_recursive = FALSE)
+ * @method Builder granularSearch($request, ?string $prepend_key = '', $is_recursive = FALSE)
+ * @method Builder granularSearchWithRelations(Request $request)
+ */
 
 trait GranularSearchableTrait
 {
@@ -24,7 +32,7 @@ trait GranularSearchableTrait
     protected static $request;
 
     /**
-     * Query scope of Granular Search for Eloquent Model Relations
+     * Query scope for the Eloquent model to filter via single related model.
      *
      * @param Builder $query
      * @param string $relation_name
@@ -48,6 +56,8 @@ trait GranularSearchableTrait
     }
 
     /**
+     * Query scope for the Eloquent model to filter via multiple related models.
+     *
      * @param Builder $query
      * @param array|null $relations
      * @param array|null $excluded_relations
@@ -67,9 +77,7 @@ trait GranularSearchableTrait
     }
 
     /**
-     * Query scope of Granular Search for Eloquent models
-     *
-     * @method
+     * Query scope for the Eloquent model to filter via table-related request keys.
      *
      * @param Builder $query
      * @param Request|array $request
@@ -85,6 +93,8 @@ trait GranularSearchableTrait
     }
 
     /**
+     * Query scope for the Eloquent to filter via table-related requests keys and via related models.
+     *
      * @param Builder $query
      * @param Request $request
      * @return mixed
@@ -94,6 +104,8 @@ trait GranularSearchableTrait
     }
 
     /**
+     * Get table name of the model instance.
+     *
      * @return mixed
      */
     public static function getTableName()
@@ -104,7 +116,7 @@ trait GranularSearchableTrait
     // Other Methods
 
     /**
-     * Determine if the class using the trait is a subclass of Eloquent Model
+     * Determine if the class using the trait is a subclass of Eloquent Model.
      *
      * @return bool
      */
@@ -114,7 +126,7 @@ trait GranularSearchableTrait
     }
 
     /**
-     * Determine if the given relationship (method) exists.
+     * Check for the existence of a relation to an Eloquent model.
      *
      * @param string $relation
      * @return bool
@@ -134,6 +146,11 @@ trait GranularSearchableTrait
         }
     }
 
+    /**
+     * Validate if the $relation really exists on the Eloquent model.
+     *
+     * @param string $relation
+     */
     private function validateRelation(string $relation): void
     {
         if(static::hasGranularRelation($relation) === FALSE){

@@ -28,6 +28,8 @@ use RuntimeException;
 trait GranularSearchTrait
 {
     /**
+     * Filter the model collection using the contents of the $request variable.
+     *
      * @param Request|array $request Contains all the information regarding the HTTP request
      * @param Model|Builder $model Model or query builder that will be subjected to searching/filtering
      * @param string $table_name Database table name associated with the $model
@@ -159,7 +161,7 @@ trait GranularSearchTrait
     // Methods
 
     /**
-     * Get associative array from $request variable.
+     * Get a processed associative array from $request variable.
      *
      * @param Request|array $request
      * @param array|null $excluded_keys
@@ -181,6 +183,8 @@ trait GranularSearchTrait
     }
 
     /**
+     * Remove the prepend string from the prepended request keys.
+     *
      * @param $data
      * @param string $prepend_key
      * @param bool $is_recursive
@@ -214,7 +218,7 @@ trait GranularSearchTrait
     }
 
     /**
-     * Validate $table_name.
+     * Validate if the $table_name is an actual database table.
      *
      * @param string $table_name
      */
@@ -226,7 +230,7 @@ trait GranularSearchTrait
     }
 
     /**
-     * Validate $excluded_keys.
+     * Validate $excluded_keys if it is an associative array.
      *
      * @param array $excluded_keys
      */
@@ -264,6 +268,8 @@ trait GranularSearchTrait
     }
 
     /**
+     * Determine if the $request is either a Request instance or an associative array.
+     *
      * @param Request|array $request
      */
     public static function validateRequest($request): void
@@ -274,6 +280,8 @@ trait GranularSearchTrait
     }
 
     /**
+     * Check if the Request or associative array has a specific key.
+     *
      * @param Request|array $request
      * @param string $key
      * @return bool
