@@ -30,7 +30,7 @@ trait GranularSearchableTrait
     protected static $granular_excluded_keys = [];
     protected static $granular_like_keys = [];
     protected static $granular_q_relations = [];
-    private static $request;
+    protected static $request;
 
     /**
      * Query scope for the Eloquent model to filter via single related model.
