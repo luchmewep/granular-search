@@ -1,8 +1,6 @@
 <?php
 
-
 namespace Luchmewep\GranularSearch\Abstracts;
-
 
 use Illuminate\Database\Eloquent\Model;
 use Luchmewep\GranularSearch\Traits\GranularSearchableTrait;

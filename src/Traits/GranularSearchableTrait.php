@@ -11,7 +11,6 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionException;
 use RuntimeException;
-use function React\Promise\some;
 
 /**
  * Trait GranularSearchableTrait
@@ -31,7 +30,7 @@ trait GranularSearchableTrait
     protected static $granular_excluded_keys = [];
     protected static $granular_like_keys = [];
     protected static $granular_q_relations = [];
-    protected static $request;
+    private static $request;
 
     /**
      * Query scope for the Eloquent model to filter via single related model.
