@@ -24,12 +24,20 @@ class GranularSearchServiceProvider extends ServiceProvider
             $this->bootForConsole();
         }
 
-        Arr::macro('isFilled', function ($array, string $key){
-            foreach ($array as $k => $value){
-                return $k === $key && is_null($value) === FALSE;
+
+        /**
+         *
+         */
+        Arr::macro('isFilled', function (array $haystack, string $needle){
+            foreach ($haystack as $key => $value){
+                if($key === $needle){
+                    return is_null($value) === FALSE;
+                }
             }
             return false;
         });
+
+
     }
 
     /**

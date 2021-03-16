@@ -11,14 +11,16 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionException;
 use RuntimeException;
+use function React\Promise\some;
 
 /**
  * Trait GranularSearchableTrait
  * @package Luchmewep\GranularSearch\Traits
  *
- * @method Builder ofRelation(string $relation_name, ?string $prepend_key = '', ?bool $is_recursive = FALSE)
- * @method Builder ofRelations(?array $relations = [], ?array $excluded_relations =  [], ?bool $is_recursive = FALSE)
- * @method Builder granularSearch($request, ?string $prepend_key = '', $is_recursive = FALSE)
+ * @method Builder ofRelation(string $relation_name, string $key, $value)
+ * @method Builder ofRelationViaRequest(string $relation_name, ?string $prepend_key = '')
+ * @method Builder ofRelationsViaRequest(?array $relations = [])
+ * @method Builder granularSearch($request, ?string $prepend_key = '',  $ignore_q = FALSE)
  * @method Builder granularSearchWithRelations(Request $request)
  */
 
@@ -28,7 +30,7 @@ trait GranularSearchableTrait
 
     protected static $granular_excluded_keys = [];
     protected static $granular_like_keys = [];
-    protected static $granular_relations = [];
+    protected static $granular_q_relations = [];
     protected static $request;
 
     /**
@@ -36,21 +38,38 @@ trait GranularSearchableTrait
      *
      * @param Builder $query
      * @param string $relation_name
-     * @param string|null $prepend_key
-     * @param bool $is_recursive
+     * @param string $key
+     * @param mixed $value
      * @return Builder
      */
-    public function scopeOfRelation(Builder $query, string $relation_name, ?string $prepend_key = '', $is_recursive = FALSE): Builder
+    public function scopeOfRelation(Builder $query, string $relation_name, string $key, $value): Builder
     {
         $this->validateRelation($relation_name);
-        if(static::requestArrayHas(static::$request, 'q')){
-            return $query->orWhereHas($relation_name, function ($q) use ($prepend_key, $relation_name, $is_recursive) {
-                $q->granularSearch(static::$request, empty($prepend_key) ? Str::snake(Str::singular($relation_name)) : $prepend_key, $is_recursive);
+        return $query->whereHas($relation_name, function ($q) use ($key, $value) {
+            $q->granularSearch([$key => $value]);
+        });
+    }
+
+    /**
+     * Query scope for the Eloquent model to filter via single related model.
+     *
+     * @param Builder $query
+     * @param string $relation_name
+     * @param string|null $prepend_key
+     * @return Builder
+     */
+    public function scopeOfRelationViaRequest(Builder $query, string $relation_name, ?string $prepend_key = ''): Builder
+    {
+        $this->validateRelation($relation_name);
+        $prepend_key = empty($prepend_key) ? Str::snake(Str::singular($relation_name)) : $prepend_key;
+        if(static::requestArrayHas(static::$request, 'q') && in_array($relation_name, static::$granular_q_relations, true) && static::requestArrayHas(static::$request, $prepend_key . '_', false) === FALSE) {
+            return $query->orWhereHas($relation_name, function ($q) use ($prepend_key) {
+                $q->granularSearch(static::$request, $prepend_key);
             });
         }
         else{
-            return $query->whereHas($relation_name, function ($q) use ($prepend_key, $relation_name, $is_recursive) {
-                $q->granularSearch(static::$request, empty($prepend_key) ? Str::snake(Str::singular($relation_name)) : $prepend_key, $is_recursive);
+            return $query->whereHas($relation_name, function ($q) use ($prepend_key) {
+                $q->granularSearch(static::$request, $prepend_key, TRUE);
             });
         }
     }
@@ -60,18 +79,15 @@ trait GranularSearchableTrait
      *
      * @param Builder $query
      * @param array|null $relations
-     * @param array|null $excluded_relations
-     * @param bool $is_recursive
      * @return Builder
      */
 
-    public function scopeOfRelations(Builder $query, ?array $relations = [], ?array $excluded_relations =  [], $is_recursive = FALSE): Builder
+    public function scopeOfRelationsViaRequest(Builder $query, ?array $relations = []): Builder
     {
-        $relations = empty($relations) ? static::$granular_relations : $relations;
-        $relations = empty($excluded_relations) ? $relations : array_values(array_diff($relations, $excluded_relations));
+        $relations = empty($relations) ? static::$granular_q_relations : $relations;
         foreach ($relations as $relation)
         {
-            $query->ofRelation($relation, null, $is_recursive);
+            $query->ofRelationViaRequest($relation, null);
         }
         return $query;
     }
@@ -82,14 +98,14 @@ trait GranularSearchableTrait
      * @param Builder $query
      * @param Request|array $request
      * @param string|null $prepend_key
-     * @param bool $is_recursive
+     * @param bool $ignore_q
      * @return Builder|Model
      */
-    public function scopeGranularSearch(Builder $query, $request, ?string $prepend_key = '', $is_recursive = FALSE)
+    public function scopeGranularSearch(Builder $query, $request, ?string $prepend_key = '',  $ignore_q = FALSE)
     {
         static::validateRequest($request);
         static::$request = $request;
-        return $this->getGranularSearch($request, $query, static::getTableName(), static::$granular_excluded_keys, static::$granular_like_keys, $prepend_key, $is_recursive);
+        return $this->getGranularSearch($request, $query, static::getTableName(), static::$granular_excluded_keys, static::$granular_like_keys, $prepend_key, $ignore_q);
     }
 
     /**
@@ -100,7 +116,7 @@ trait GranularSearchableTrait
      * @return mixed
      */
     public function scopeGranularSearchWithRelations(Builder $query, Request $request){
-        return $query->granularSearch($request)->ofRelations($request->get('relations', []), $request->get('excluded_relations', []), $request->has('relations'));
+        return $query->granularSearch($request)->ofRelationsViaRequest($request->get('q_relations', []));
     }
 
     /**

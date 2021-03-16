@@ -11,17 +11,17 @@ use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * * This trait can be used by controller classes to use the Granular Search algorithm.
- * * Granular Search's goal is to make model filtering/searching easier with just one line code.
+ * This trait can be used by controller classes to use the Granular Search algorithm.
+ * Granular Search's goal is to make model filtering/searching easier with just one line code.
  *
- * * Most of the time, some keys inside the $request are also column names of the table associated with the $model.
- * * Also, most of the search algorithm created before has a repetitive pattern: $model->where($key, $value).
- * * To save time and apply DRY principle, this trait was born.
+ * Most of the time, some keys inside the $request are also column names of the table associated with the $model.
+ * Also, most of the search algorithm created before has a repetitive pattern: $model->where($key, $value).
+ * To save time and apply DRY principle, this trait was born.
  *
- * * By design, this trait will ONLY process the $request keys that are parts of table column names of the $model.
- * * Since the $model is both an input and an output, the $model can be subjected to more filtering before/after using granular-search.
- * * Since a $request key can have an array as value, whereIn and whereInLike are also introduced in this algorithm.
- * * The output will be a Query Builder which can be executed using 'get()'.
+ * By design, this trait will ONLY process the $request keys that are parts of table column names of the $model.
+ * Since the $model is both an input and an output, the $model can be subjected to more filtering before/after using granular-search.
+ * Since a $request key can have an array as value, whereIn and whereInLike are also introduced in this algorithm.
+ * The output will be a Query Builder which can be executed using 'get()'.
  *
  * @author James Carlo S. Luchavez (carlo.luchavez@fourello.com)
  */
@@ -36,40 +36,43 @@ trait GranularSearchTrait
      * @param array $excluded_keys Request keys or table column names to be excluded from $request
      * @param array $like_keys Request keys or table column names to be search with LIKE
      * @param string $prepend_key
-     * @param bool $is_recursive
-     * @return Model|Builder|array
+     * @param bool $ignore_q
+     * @return Model|Builder
      */
-    public static function getGranularSearch($request, $model, string $table_name, array $excluded_keys = [], array $like_keys = [], $prepend_key = '', $is_recursive = FALSE)
+    public static function getGranularSearch($request, $model, string $table_name, array $excluded_keys = [], array $like_keys = [], $prepend_key = '', $ignore_q = FALSE)
     {
         self::validateTableName($table_name);
         self::validateExcludedKeys($excluded_keys);
 
-        $data = self::prepareData($request, $excluded_keys, $prepend_key, $is_recursive);
+        $data = self::prepareData($request, $excluded_keys, $prepend_key, $ignore_q);
         $request_keys = array_keys($data);
 
         if(empty($data)) {
             return $model;
         }
 
+        $accept_q = $ignore_q === FALSE && Arr::isFilled($data, 'q');
+
         $table_keys = self::prepareTableKeys($table_name, $excluded_keys);
 
         self::validateLikeKeys($like_keys, $table_name);
 
-        if(Arr::isFilled($data, 'q')) {
+        if($accept_q) {
             $like_keys = array_values(array_intersect($table_keys, $like_keys));
             $exact_keys = array_values(array_diff($table_keys, $like_keys));
         }
         else {
             $like_keys = array_values(array_intersect($like_keys, $table_keys, $request_keys));
-            $exact_keys = (array_diff($request_keys, $like_keys));
+            $exact_keys = array_values(array_diff($request_keys, $like_keys));
             $exact_keys = array_values(array_intersect($table_keys, $exact_keys));
         }
 
-        $model = $model->where(function ($query) use ($data, $like_keys, $exact_keys) {
+
+        $model = $model->where(function ($query) use ($accept_q, $data, $like_keys, $exact_keys) {
             // If $like_keys is a non-empty array, proceed with searching by LIKE
             if (empty($like_keys) === FALSE) {
                 // If 'q' is present and is filled, proceed with all-column search
-                if(Arr::isFilled($data, 'q')){
+                if($accept_q){
                     $search = $data['q'];
                     foreach ($like_keys as $col) {
                         if(is_array($search)){
@@ -103,7 +106,7 @@ trait GranularSearchTrait
             }
 
             // Proceed with EQUAL search
-            if(Arr::isFilled($data, 'q')){
+            if($accept_q){
                 $search = $data['q'];
                 foreach ($exact_keys as $col) {
                     if(is_array($search)){
@@ -166,18 +169,20 @@ trait GranularSearchTrait
      * @param Request|array $request
      * @param array|null $excluded_keys
      * @param string $prepend_key
-     * @param bool $is_recursive
+     * @param bool $ignore_q
      * @return array
      */
-    private static function prepareData($request, $excluded_keys = [], $prepend_key = '', $is_recursive = FALSE): array
+    private static function prepareData($request, $excluded_keys = [], $prepend_key = '', $ignore_q = FALSE): array
     {
-        if(is_array($request) && (empty($request) || Arr::isAssoc($request))){
+        if(is_array($request) && (empty($request) || Arr::isAssoc($request)))
+        {
             Arr::forget($request, $excluded_keys);
-            return self::extractPrependedArrayKeys($request, $prepend_key, $is_recursive);
+            return self::extractPrependedArrayKeys($request, $prepend_key, $ignore_q);
         }
         if(is_subclass_of($request, Request::class)){
+
             $request = $request->except($excluded_keys);
-            return self::extractPrependedArrayKeys($request, $prepend_key, $is_recursive);
+            return self::extractPrependedArrayKeys($request, $prepend_key, $ignore_q);
         }
         throw new RuntimeException('The request variable must be array or an instance of Illuminate/Http/Request.');
     }
@@ -187,19 +192,17 @@ trait GranularSearchTrait
      *
      * @param $data
      * @param string $prepend_key
-     * @param bool $is_recursive
+     * @param bool $ignore_q
      * @return array
      */
-    public static function extractPrependedArrayKeys($data, $prepend_key = '', $is_recursive = FALSE): array
+    public static function extractPrependedArrayKeys($data, $prepend_key = '', $ignore_q = FALSE): array
     {
-        if(empty($prepend_key) || ($is_recursive && Arr::isFilled($data,'q'))){
+        if(empty($prepend_key) || (Arr::isFilled($data,'q') && $ignore_q === FALSE)){
             return $data;
         }
-
         if(empty($data) === FALSE && Arr::isAssoc($data) === FALSE){
             throw new RuntimeException('The data variable must be an associative array.');
         }
-
 
         $result = [];
         $prepend = $prepend_key . '_';
@@ -274,7 +277,7 @@ trait GranularSearchTrait
      */
     public static function validateRequest($request): void
     {
-        if((is_array($request) && Arr::isAssoc($request) === FALSE) || is_subclass_of($request, Request::class) === FALSE){
+        if((is_array($request) && Arr::isAssoc($request) === FALSE) && is_subclass_of($request, Request::class) === FALSE){
             throw new RuntimeException('The request variable must be array or an instance of Illuminate/Http/Request.');
         }
     }
@@ -284,15 +287,24 @@ trait GranularSearchTrait
      *
      * @param Request|array $request
      * @param string $key
+     * @param bool|null $is_exact
      * @return bool
      */
-    public static function requestArrayHas($request, $key = ''): bool
+    public static function requestArrayHas($request, $key = '', ?bool $is_exact = true): bool
     {
         if(is_array($request) && (empty($request) || Arr::isAssoc($request))){
-            return Arr::has($request, $key);
+            if($is_exact){
+                return Arr::has($request, $key);
+            }else{
+                return preg_grep("/$key/", array_keys($request)) ? true : false;
+            }
         }
         else if(is_subclass_of($request, Request::class)){
-            return $request->has($key);
+            if($is_exact){
+                return $request->has($key);
+            }else{
+                return preg_grep("/$key/", $request->keys()) ? true : false;
+            }
         }
         return false;
     }
