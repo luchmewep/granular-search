@@ -2,7 +2,9 @@
 
 namespace Luchmewep\GranularSearch;
 
+use Luchmewep\GranularSearch\Traits\GranularSearchTrait;
+
 class GranularSearch
 {
-    // Build wonderful things
+    use GranularSearchTrait;
 }

@@ -21,7 +21,7 @@ use function React\Promise\some;
  * @method Builder ofRelationViaRequest(string $relation_name, ?string $prepend_key = '')
  * @method Builder ofRelationsViaRequest(?array $relations = [])
  * @method Builder granularSearch($request, ?string $prepend_key = '',  $ignore_q = FALSE)
- * @method Builder granularSearchWithRelations(Request $request)
+ * @method Builder granularSearchWithRelations($request)
  */
 
 trait GranularSearchableTrait
@@ -112,11 +112,11 @@ trait GranularSearchableTrait
      * Query scope for the Eloquent to filter via table-related requests keys and via related models.
      *
      * @param Builder $query
-     * @param Request $request
+     * @param Request|array $request
      * @return mixed
      */
-    public function scopeGranularSearchWithRelations(Builder $query, Request $request){
-        return $query->granularSearch($request)->ofRelationsViaRequest($request->get('q_relations', []));
+    public function scopeGranularSearchWithRelations(Builder $query, $request){
+        return $query->granularSearch($request)->ofRelationsViaRequest(static::requestArrayGet($request, 'q_relations', []));
     }
 
     /**

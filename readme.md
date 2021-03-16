@@ -15,6 +15,13 @@ $ composer require luchmewep/granular-search
 
 ## Usage
 
+### Implement on Eloquent Models
+
+### Implement on Model Controllers
+
+### Using Outside Models and Controllers
+
+
 ## Change log
 
 Please see the [changelog](changelog.md) for more information on what has changed recently.

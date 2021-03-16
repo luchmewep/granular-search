@@ -67,7 +67,6 @@ trait GranularSearchTrait
             $exact_keys = array_values(array_intersect($table_keys, $exact_keys));
         }
 
-
         $model = $model->where(function ($query) use ($accept_q, $data, $like_keys, $exact_keys) {
             // If $like_keys is a non-empty array, proceed with searching by LIKE
             if (empty($like_keys) === FALSE) {
@@ -307,5 +306,16 @@ trait GranularSearchTrait
             }
         }
         return false;
+    }
+
+    public static function requestArrayGet($request, $key, $default = null){
+        if(static::requestArrayHas($request, $key)){
+            if(is_array($request)){
+                return $request[$key];
+            }else{
+                $request->$key;
+            }
+        }
+        return $default;
     }
 }
