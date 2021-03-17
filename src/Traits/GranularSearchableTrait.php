@@ -29,6 +29,7 @@ trait GranularSearchableTrait
 
     protected static $granular_excluded_keys = [];
     protected static $granular_like_keys = [];
+    protected static $granular_allowed_relations = [];
     protected static $granular_q_relations = [];
     protected static $request;
 
@@ -66,10 +67,12 @@ trait GranularSearchableTrait
                 $q->granularSearch(static::$request, $prepend_key);
             });
         }
-        else{
+        else if(in_array($relation_name, static::$granular_allowed_relations, true) && static::requestArrayHas(static::$request, $prepend_key . '_', false)){
             return $query->whereHas($relation_name, function ($q) use ($prepend_key) {
                 $q->granularSearch(static::$request, $prepend_key, TRUE);
             });
+        }else{
+            return $query;
         }
     }
 
@@ -83,7 +86,7 @@ trait GranularSearchableTrait
 
     public function scopeOfRelationsViaRequest(Builder $query, ?array $relations = []): Builder
     {
-        $relations = empty($relations) ? static::$granular_q_relations : $relations;
+        $relations = empty($relations) ? static::$granular_allowed_relations : $relations;
         foreach ($relations as $relation)
         {
             $query->ofRelationViaRequest($relation, null);

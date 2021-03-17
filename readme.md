@@ -47,9 +47,12 @@ Once extended, you should set up these protected static fields.
 protected static $granular_excluded_keys = [];
 // Model fields to use LIKE instead instead of equal
 protected static $granular_like_keys = [];
-// Relations to include on 'q' search
+// Relations to consider for filtering/searching
+protected static $granular_allowed_relations = [];
+// Relations to include on 'q' search (must be a subset of allowed relations array)
 protected static $granular_q_relations = [];
 ```
+
 ![](images/abstract_protected.jpg)
 
 #### Tinker Examples
