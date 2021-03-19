@@ -276,7 +276,7 @@ trait GranularSearchTrait
      */
     public static function validateRequest($request): void
     {
-        if((is_array($request) && Arr::isAssoc($request) === FALSE) && is_subclass_of($request, Request::class) === FALSE){
+        if((is_array($request) && empty($request) === FALSE && Arr::isAssoc($request) === FALSE) && is_subclass_of($request, Request::class) === FALSE){
             throw new RuntimeException('The request variable must be array or an instance of Illuminate/Http/Request.');
         }
     }
