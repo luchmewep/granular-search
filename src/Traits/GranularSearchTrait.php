@@ -27,6 +27,8 @@ use RuntimeException;
  */
 trait GranularSearchTrait
 {
+    protected static $q_alias = 'q';
+
     /**
      * Filter the model collection using the contents of the $request variable.
      *
@@ -37,12 +39,19 @@ trait GranularSearchTrait
      * @param array $like_keys Request keys or table column names to be search with LIKE
      * @param string $prepend_key
      * @param bool $ignore_q
+     * @param bool $force_or
      * @return Model|Builder
      */
-    public static function getGranularSearch($request, $model, string $table_name, array $excluded_keys = [], array $like_keys = [], $prepend_key = '', $ignore_q = FALSE)
+    public static function getGranularSearch($request, $model, string $table_name, array $excluded_keys = [], array $like_keys = [], string $prepend_key = '', bool $ignore_q = false, bool $force_or = false)
     {
+        self::validateRequest($request);
         self::validateTableName($table_name);
         self::validateExcludedKeys($excluded_keys);
+
+        // Always convert $request to Associative Array
+        if (is_subclass_of($request, Request::class)) {
+            $request = $request->all();
+        }
 
         $data = self::prepareData($request, $excluded_keys, $prepend_key, $ignore_q);
         $request_keys = array_keys($data);
@@ -51,37 +60,37 @@ trait GranularSearchTrait
             return $model;
         }
 
-        $accept_q = $ignore_q === FALSE && Arr::isFilled($data, 'q');
+        $accept_q = !$ignore_q && Arr::isFilled($data, self::$q_alias);
 
-        $table_keys = self::prepareTableKeys($table_name, $excluded_keys);
+        $table_keys = static::prepareTableKeys($table_name, $excluded_keys);
 
-        self::validateLikeKeys($like_keys, $table_name);
+        $like_keys = array_values(array_intersect($like_keys, $table_keys));
 
         if($accept_q) {
-            $like_keys = array_values(array_intersect($table_keys, $like_keys));
             $exact_keys = array_values(array_diff($table_keys, $like_keys));
         }
         else {
-            $like_keys = array_values(array_intersect($like_keys, $table_keys, $request_keys));
-            $exact_keys = array_values(array_diff($request_keys, $like_keys));
-            $exact_keys = array_values(array_intersect($table_keys, $exact_keys));
+            $like_keys = array_values(array_intersect($request_keys, $like_keys));
+            $exact_keys = array_values(array_intersect($request_keys, $table_keys));
+            $exact_keys = array_values(array_diff($exact_keys, $like_keys));
         }
 
-        $model = $model->where(function ($query) use ($accept_q, $data, $like_keys, $exact_keys) {
-            // If $like_keys is a non-empty array, proceed with searching by LIKE
-            if (empty($like_keys) === FALSE) {
+        $model = $model->where(function ($query) use ($force_or, $accept_q, $data, $like_keys, $exact_keys) {
+            // 'LIKE' SEARCHING
+            if (empty($like_keys) === false) {
                 // If 'q' is present and is filled, proceed with all-column search
                 if($accept_q){
-                    $search = $data['q'];
+                    $search = $data[self::$q_alias];
                     foreach ($like_keys as $col) {
-                        if(is_array($search)){
-                            $query = $query->orWhere(function ($q) use ($search, $col) {
-                                foreach ($search as $s) {
-                                    $q->orWhere($col, 'LIKE', '%' . $s . '%');
+                        $value = Arr::get($data, $col, $search);
+                        if(is_array($value)){
+                            $query = $query->orWhere(function ($q) use ($value, $col) {
+                                foreach ($value as $s) {
+                                    $q->orWhere($col, 'LIKE', self::getLikeString($s));
                                 }
                             });
                         }else{
-                            $query = $query->orWhere($col, 'LIKE', '%' . $search . '%');
+                            $query = $query->orWhere($col, 'LIKE', self::getLikeString($value));
                         }
                     }
                 }
@@ -93,25 +102,26 @@ trait GranularSearchTrait
                             if (is_array($data[$col])) {
                                 $query = $query->where(function ($q) use ($data, $col) {
                                     foreach ($data[$col] as $d) {
-                                        $q->orWhere($col, 'LIKE', '%' . $d . '%');
+                                        $q->orWhere($col, 'LIKE', self::getLikeString($d));
                                     }
                                 });
                             } else {
-                                $query = $query->where($col, 'LIKE', '%' . $data[$col] . '%');
+                                $query = $query->where($col, 'LIKE', self::getLikeString($data[$col]));
                             }
                         }
                     }
                 }
             }
 
-            // Proceed with EQUAL search
+            // 'EXACT' SEARCHING
             if($accept_q){
-                $search = $data['q'];
+                $search = $data[self::$q_alias];
                 foreach ($exact_keys as $col) {
-                    if(is_array($search)){
-                        $query = $query->orWhereIn($col, $search);
+                    $value = Arr::get($data, $col, $search);
+                    if(is_array($value)){
+                        $query = $query->orWhereIn($col, $value);
                     }else{
-                        $query = $query->orWhere($col, $search);
+                        $query = $query->orWhere($col, $value);
                     }
                 }
             }
@@ -119,16 +129,16 @@ trait GranularSearchTrait
                 foreach ($exact_keys as $col) {
                     if (Arr::isFilled($data, $col)) {
                         if (is_array($data[$col])) {
-                            $query = $query->whereIn($col, $data[$col]);
+                            $query = $force_or ? $query->orWhereIn($col, $data[$col]) : $query->whereIn($col, $data[$col]);
                         } else {
-                            $query = $query->where($col, $data[$col]);
+                            $query = $force_or ? $query->orWhere($col, $data[$col]) : $query->where($col, $data[$col]);
                         }
                     }
                 }
             }
         });
 
-        // Proceed with sorting
+        // SORTING
         if(Arr::isFilled($data, 'sortBy'))
         {
             $asc = $data['sortBy'];
@@ -146,13 +156,13 @@ trait GranularSearchTrait
 
         else if(Arr::isFilled($data, 'sortByDesc')){
             $desc = $data['sortByDesc'];
-            if(is_array($desc)){
+            if(is_array($desc)) {
                 foreach ($desc as $d) {
                     if(Schema::hasColumn($table_name, $d)){
                         $model = $model->orderBy($d, 'desc');
                     }
                 }
-            }else if(Schema::hasColumn($table_name, $desc)) {
+            } else if(Schema::hasColumn($table_name, $desc)) {
                 $model = $model->orderBy($desc, 'desc');
             }
         }
@@ -165,49 +175,56 @@ trait GranularSearchTrait
     /**
      * Get a processed associative array from $request variable.
      *
-     * @param Request|array $request
+     * @param array $request
      * @param array|null $excluded_keys
      * @param string $prepend_key
      * @param bool $ignore_q
      * @return array
      */
-    private static function prepareData($request, $excluded_keys = [], $prepend_key = '', $ignore_q = FALSE): array
+    private static function prepareData(array $request, $excluded_keys = [], $prepend_key = '', $ignore_q = false): array
     {
         if(is_array($request) && (empty($request) || Arr::isAssoc($request)))
         {
             Arr::forget($request, $excluded_keys);
-            return self::extractPrependedArrayKeys($request, $prepend_key, $ignore_q);
+            return static::extractPrependedKeys($request, $prepend_key, $ignore_q);
         }
-        if(is_subclass_of($request, Request::class)){
-
-            $request = $request->except($excluded_keys);
-            return self::extractPrependedArrayKeys($request, $prepend_key, $ignore_q);
-        }
-        throw new RuntimeException('The request variable must be array or an instance of Illuminate/Http/Request.');
+        throw new RuntimeException('$request variable must be an associative array.');
     }
 
     /**
      * Remove the prepend string from the prepended request keys.
      *
-     * @param $data
+     * @param Request|array $data
      * @param string $prepend_key
      * @param bool $ignore_q
      * @return array
      */
-    public static function extractPrependedArrayKeys($data, $prepend_key = '', $ignore_q = FALSE): array
+    public static function extractPrependedKeys($data, string $prepend_key = '', bool $ignore_q = false): array
     {
-        if(empty($prepend_key) || (Arr::isFilled($data,'q') && $ignore_q === FALSE)){
+        if(is_subclass_of($data, Request::class)) {
+            $data = $data->all();
+        }
+
+        if(empty($prepend_key)) {
             return $data;
         }
-        if(empty($data) === FALSE && Arr::isAssoc($data) === FALSE){
-            throw new RuntimeException('The data variable must be an associative array.');
+
+        if(empty($data) === false && Arr::isAssoc($data) === false) {
+            throw new RuntimeException('$data must be an associative array.');
         }
 
         $result = [];
         $prepend = $prepend_key . '_';
-        foreach ($data as $key=>$value){
+
+        foreach ($data as $key=>$value) {
+            if(empty($value)) {
+                continue;
+            }
             if(Str::startsWith($key, $prepend)){
                 $result[Str::after($key, $prepend)] = $value;
+            }
+            else if ($key === self::$q_alias && $ignore_q === false){
+                $result[self::$q_alias] = $value;
             }
         }
 
@@ -226,7 +243,7 @@ trait GranularSearchTrait
      */
     private static function validateTableName(string $table_name): void
     {
-        if(Schema::hasTable($table_name) === FALSE){
+        if(Schema::hasTable($table_name) === false){
             throw new RuntimeException('Table name provided does not exist in database.');
         }
     }
@@ -238,47 +255,29 @@ trait GranularSearchTrait
      */
     private static function validateExcludedKeys(array $excluded_keys): void
     {
-        if(is_array($excluded_keys) === FALSE){
-            throw new RuntimeException('Only arrays are allowed for $excluded_keys');
-        }
         if(Arr::isAssoc($excluded_keys)){
-            throw new RuntimeException('Associative array not allowed for $excluded_keys. Provide sequential array instead.');
+            throw new RuntimeException('$excluded_keys must be a sequential array, not an associative one.');
         }
     }
 
     /**
-     * Validate $like_keys with respect to specified database table.
-     *
-     * @param array $like_keys
-     * @param string $table_name
-     */
-    private static function validateLikeKeys(array $like_keys, string $table_name): void
-    {
-        if(is_array($like_keys) === FALSE){
-            throw new RuntimeException('Only arrays are allowed for $like_keys');
-        }
-
-        if(Arr::isAssoc($like_keys)){
-            throw new RuntimeException('Associative arrays not allowed for $like_keys. Provide sequential array instead.');
-        }
-
-        foreach ($like_keys as $key){
-            if(Schema::hasColumn($table_name, $key) === FALSE){
-                throw new RuntimeException('An element of $like_keys is not found on specified database table.');
-            }
-        }
-    }
-
-    /**
-     * Determine if the $request is either a Request instance or an associative array.
+     * Determine if the $request is either a Request instance/subclass or an associative array.
      *
      * @param Request|array $request
      */
     public static function validateRequest($request): void
     {
-        if((is_array($request) && empty($request) === FALSE && Arr::isAssoc($request) === FALSE) && is_subclass_of($request, Request::class) === FALSE){
-            throw new RuntimeException('The request variable must be array or an instance of Illuminate/Http/Request.');
+        if((is_array($request) && empty($request) === false && Arr::isAssoc($request) === false) && is_subclass_of($request, Request::class) === false){
+            throw new RuntimeException('$request must be an array or an instance/subclass of Illuminate/Http/Request.');
         }
+    }
+
+    public static function getLikeString(string $str){
+        $result = '%';
+        foreach (str_split($str) as $s){
+            $result .= $s . '%';
+        }
+        return $result;
     }
 
     /**
@@ -289,33 +288,90 @@ trait GranularSearchTrait
      * @param bool|null $is_exact
      * @return bool
      */
-    public static function requestArrayHas($request, $key = '', ?bool $is_exact = true): bool
+    public static function requestOrArrayHas($request, $key = '', ?bool $is_exact = true): bool
     {
         if(is_array($request) && (empty($request) || Arr::isAssoc($request))){
             if($is_exact){
                 return Arr::has($request, $key);
             }else{
-                return preg_grep("/$key/", array_keys($request)) ? true : false;
+                return (bool) preg_grep("/$key/", array_keys($request));
             }
         }
         else if(is_subclass_of($request, Request::class)){
             if($is_exact){
                 return $request->has($key);
             }else{
-                return preg_grep("/$key/", $request->keys()) ? true : false;
+                return (bool) preg_grep("/$key/", $request->keys());
             }
         }
         return false;
     }
 
-    public static function requestArrayGet($request, $key, $default = null){
-        if(static::requestArrayHas($request, $key)){
-            if(is_array($request)){
+    /**
+     * @param Request|array $request
+     * @param string $key
+     * @param mixed $default
+     * @return mixed
+     */
+    public static function requestOrArrayGet($request, string $key, $default = null) {
+        if(static::requestOrArrayHas($request, $key)) {
+            if(is_array($request)) {
                 return $request[$key];
-            }else{
-                $request->$key;
+            } else {
+                return $request->$key;
             }
         }
         return $default;
+    }
+
+    /**
+     * @param Request|array $request
+     * @param string $key
+     * @return bool
+     */
+    public static function isRequestOrArrayFilled($request, string $key): bool
+    {
+        if(static::requestOrArrayHas($request, $key)){
+            if(is_array($request)) {
+                return Arr::isFilled($request, $key);
+            } else {
+                return $request->filled($key);
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param Request|array $request
+     * @return bool
+     */
+    public static function hasQ($request) {
+        return static::isRequestOrArrayFilled($request, static::$q_alias, true);
+    }
+
+    /**
+     * Checks if a table has been queried already.
+     *
+     * @param Builder|\Illuminate\Database\Query\Builder $query
+     * @param $table
+     * @return bool
+     */
+    public static function isTableHasQueried($query, $table): bool
+    {
+        $wheres = [];
+
+        if($query instanceof Builder){
+            $wheres = $query->getQuery()->wheres;
+        } elseif($query instanceof \Illuminate\Database\Query\Builder) {
+            $wheres = $query->wheres;
+        }
+
+        foreach ($wheres as $where) {
+            if (isset($where['query']) && ($where['query']->from === $table || self::isTableHasQueried($where['query'], $table))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -3,24 +3,23 @@
 
 namespace Luchmewep\GranularSearch\Traits;
 
+use BadMethodCallException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use ReflectionClass;
-use ReflectionException;
 use RuntimeException;
 
 /**
  * Trait GranularSearchableTrait
  * @package Luchmewep\GranularSearch\Traits
  *
- * @method Builder ofRelation(string $relation_name, string $key, $value)
- * @method Builder ofRelationViaRequest(string $relation_name, ?string $prepend_key = '')
- * @method Builder ofRelationsViaRequest(?array $relations = [])
- * @method Builder granularSearch($request, ?string $prepend_key = '',  $ignore_q = FALSE)
- * @method Builder granularSearchWithRelations($request)
+ *
+ * @method Builder ofRelation(string $relation, $key, $value, bool $force_or = false)
+ * @method Builder ofRelationFromRequest($request, string $relation, ?string $prepend_key, ?array &$mentioned_models = [])
+ * @method Builder ofRelationsFromRequest($request, ?array &$mentioned_models = [])
+ * @method Builder granularSearch($request, string $prepend_key, bool $ignore_q = false, bool $force_or = false)
+ * @method Builder search($request, ?bool $ignore_q = false, ?array &$mentioned_models = [])
  */
 
 trait GranularSearchableTrait
@@ -31,67 +30,118 @@ trait GranularSearchableTrait
     protected static $granular_like_keys = [];
     protected static $granular_allowed_relations = [];
     protected static $granular_q_relations = [];
-    protected static $request;
 
     /**
      * Query scope for the Eloquent model to filter via single related model.
      *
      * @param Builder $query
-     * @param string $relation_name
-     * @param string $key
-     * @param mixed $value
+     * @param string $relation
+     * @param array|string $key
+     * @param array|string $value
+     * @param bool $force_or
      * @return Builder
      */
-    public function scopeOfRelation(Builder $query, string $relation_name, string $key, $value): Builder
+    public function scopeOfRelation(Builder $query, string $relation, $key, $value, bool $force_or = false): Builder
     {
-        $this->validateRelation($relation_name);
-        return $query->whereHas($relation_name, function ($q) use ($key, $value) {
-            $q->granularSearch([$key => $value]);
+        $this->validateRelation($relation);
+        $params = [];
+        if (is_array($key)) {
+            foreach ($key as $k){
+                $params[$k] = $value;
+            }
+        } else {
+            $params = [$key => $value];
+        }
+        return $query->whereHas($relation, function ($q) use ($force_or, $params) {
+            $q->granularSearch($params, '', false, $force_or);
         });
     }
 
+
     /**
      * Query scope for the Eloquent model to filter via single related model.
      *
      * @param Builder $query
-     * @param string $relation_name
+     * @param Request|array $request
+     * @param string $relation
      * @param string|null $prepend_key
+     * @param array|null $mentioned_models
      * @return Builder
      */
-    public function scopeOfRelationViaRequest(Builder $query, string $relation_name, ?string $prepend_key = ''): Builder
+    public function scopeOfRelationFromRequest(Builder $query, $request, string $relation, ?string $prepend_key, ?array &$mentioned_models = []): Builder
     {
-        $this->validateRelation($relation_name);
-        $prepend_key = empty($prepend_key) ? Str::snake(Str::singular($relation_name)) : $prepend_key;
-        if(static::requestArrayHas(static::$request, 'q') && in_array($relation_name, static::$granular_q_relations, true) && static::requestArrayHas(static::$request, $prepend_key . '_', false) === FALSE) {
-            return $query->orWhereHas($relation_name, function ($q) use ($prepend_key) {
-                $q->granularSearch(static::$request, $prepend_key);
+        $this->validateRelation($relation);
+
+        $q_relations = static::requestOrArrayGet($request, 'q_relations', static::$granular_q_relations);
+
+        $prepend_key = $prepend_key ?? Str::snake(Str::singular($relation));
+
+        $request = static::extractPrependedKeys($request, $prepend_key);
+
+        if (static::hasQ($request) && in_array($relation, $q_relations, true)) {
+            return $query->orWhereHas($relation, function (Builder $q) use ($mentioned_models, $request) {
+                $q->search($request, false, $mentioned_models);
             });
         }
-        else if(in_array($relation_name, static::$granular_allowed_relations, true) && static::requestArrayHas(static::$request, $prepend_key . '_', false)){
-            return $query->whereHas($relation_name, function ($q) use ($prepend_key) {
-                $q->granularSearch(static::$request, $prepend_key, TRUE);
+        else if (empty($request) === false) {
+            return $query->whereHas($relation, function (Builder $q) use ($mentioned_models, $request) {
+                $q->search($request, true, $mentioned_models);
             });
-        }else{
-            return $query;
         }
+
+        return $query;
     }
 
     /**
      * Query scope for the Eloquent model to filter via multiple related models.
      *
      * @param Builder $query
-     * @param array|null $relations
+     * @param Request|array $request
+     * @param array|null $mentioned_models
      * @return Builder
      */
 
-    public function scopeOfRelationsViaRequest(Builder $query, ?array $relations = []): Builder
+    public function scopeOfRelationsFromRequest(Builder $query, $request, ?array &$mentioned_models = []): Builder
     {
-        $relations = empty($relations) ? static::$granular_allowed_relations : $relations;
+        $relations = static::$granular_allowed_relations;
+
         foreach ($relations as $relation)
         {
-            $query->ofRelationViaRequest($relation, null);
+            $this->validateRelation($relation);
+            // TODO: Add option to set prepend key for each relationship
+            $prepend_key = Str::snake(Str::singular($relation));
+            $params = static::extractPrependedKeys($request, $prepend_key);
+            if(static::hasQ($params) && in_array(get_class($this->$relation()->getRelated()), $mentioned_models, true) && count($params) === 1){
+                continue;
+            }
+            else if(empty($params) === false) {
+                $query->ofRelationFromRequest($params, $relation, '', $mentioned_models);
+            }
         }
+
         return $query;
+    }
+
+    /**
+     * Query scope for the Eloquent to filter via table-related requests keys and via related models.
+     *
+     * @param Builder $query
+     * @param Request|array|string $request
+     * @param bool $ignore_q
+     * @param array|null $mentioned_models
+     * @return mixed
+     */
+    public function scopeSearch(Builder $query, $request, ?bool $ignore_q = false, ?array &$mentioned_models = [])
+    {
+        if(is_subclass_of($request, Request::class)) {
+            $request = $request->all();
+        }
+        else if(is_string($request)) {
+            $request = ['q' => $request];
+        }
+
+        $mentioned_models[] = static::class;
+        return $query->granularSearch($request, '', $ignore_q)->ofRelationsFromRequest($request, $mentioned_models);
     }
 
     /**
@@ -99,27 +149,16 @@ trait GranularSearchableTrait
      *
      * @param Builder $query
      * @param Request|array $request
-     * @param string|null $prepend_key
+     * @param string $prepend_key
      * @param bool $ignore_q
+     * @param bool $force_or
      * @return Builder|Model
      */
-    public function scopeGranularSearch(Builder $query, $request, ?string $prepend_key = '',  $ignore_q = FALSE)
+    public function scopeGranularSearch(Builder $query, $request, string $prepend_key, bool $ignore_q = false, bool $force_or = false)
     {
-        static::validateRequest($request);
-        static::$request = $request;
-        return $this->getGranularSearch($request, $query, static::getTableName(), static::$granular_excluded_keys, static::$granular_like_keys, $prepend_key, $ignore_q);
+        return $this->getGranularSearch($request, $query, static::getTableName(), static::$granular_excluded_keys, static::$granular_like_keys, $prepend_key, $ignore_q, $force_or);
     }
 
-    /**
-     * Query scope for the Eloquent to filter via table-related requests keys and via related models.
-     *
-     * @param Builder $query
-     * @param Request|array $request
-     * @return mixed
-     */
-    public function scopeGranularSearchWithRelations(Builder $query, $request){
-        return $query->granularSearch($request)->ofRelationsViaRequest(static::requestArrayGet($request, 'q_relations', []));
-    }
 
     /**
      * Get table name of the model instance.
@@ -152,14 +191,9 @@ trait GranularSearchableTrait
     public static function hasGranularRelation(string $relation): bool
     {
         try {
-            if (method_exists(static::class, $relation)) {
-                return ((new ReflectionClass(static::class))->newInstanceWithoutConstructor())->$relation() instanceof Relation;
-            }
-            else{
-                return false;
-            }
+            return is_subclass_of(get_class((new static)->$relation()->getRelated()), Model::class);
         }
-        catch (\TypeError | ReflectionException $exception){
+        catch (BadMethodCallException $exception) {
             return false;
         }
     }
@@ -169,9 +203,13 @@ trait GranularSearchableTrait
      *
      * @param string $relation
      */
-    private function validateRelation(string $relation): void
+    public function validateRelation(string $relation): void
     {
-        if(static::hasGranularRelation($relation) === FALSE){
+        if(in_array($relation, static::$granular_allowed_relations, true) === false){
+            throw new RuntimeException('The relation is not included in the allowed relation array: ' . $relation);
+        }
+
+        if(static::hasGranularRelation($relation) === false){
             throw new RuntimeException('The model does not have such relation: ' . $relation);
         }
     }

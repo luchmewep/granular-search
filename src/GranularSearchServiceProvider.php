@@ -27,11 +27,12 @@ class GranularSearchServiceProvider extends ServiceProvider
 
         /**
          *
+         *
          */
         Arr::macro('isFilled', function (array $haystack, string $needle){
-            foreach ($haystack as $key => $value){
-                if($key === $needle){
-                    return is_null($value) === FALSE;
+            foreach ($haystack as $key => $value) {
+                if($key === $needle) {
+                    return empty((string) $value) === false;
                 }
             }
             return false;
